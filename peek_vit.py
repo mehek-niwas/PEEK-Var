@@ -12,7 +12,7 @@ import os
 import cv2
 from scipy.special import entr
 
-# ----- Vision Transformer (Simple) -----
+# ----- simple VIT model -----
 class PatchEmbedding(nn.Module):
     def __init__(self, img_size=32, patch_size=4, in_channels=3, embed_dim=64):
         super().__init__()
@@ -67,7 +67,7 @@ class VisionTransformer(nn.Module):
         x = self.mlp_head(x)
         return x
 
-# ----- Feature Map Capture -----
+# ----- initializations for capturing feature maps -----
 feature_maps = {}
 
 def hook_fn(m, i, o):
@@ -82,7 +82,7 @@ def register_hooks(model):
         if isinstance(module, nn.MultiheadAttention):
             module.register_forward_hook(hook_fn)
 
-# ----- PEEK Functions -----
+# ----- PEEK functions (exact copy of CNN) -----
 def compute_PEEK(feature_maps, h, w):
     positivized_maps = feature_maps + np.abs(np.min(feature_maps))
     entropy_map = -np.sum(entr(positivized_maps), axis=-1)
@@ -110,10 +110,10 @@ def plot_PEEK(modules, sample_image, feature_map_path):
     # #####_, _, h, w = image.shape
     # _, h, w = image.shape
     
-    # Load original image
+    # load original image
     image = sample_image.squeeze().cpu().numpy()
 
-    # Fix dimension order if needed
+    # fixing dimension order if needed
     if image.ndim == 3:
         if image.shape[0] == 3:  # (3, H, W) --> (H, W, 3)
             image = np.transpose(image, (1, 2, 0))
@@ -123,23 +123,23 @@ def plot_PEEK(modules, sample_image, feature_map_path):
     else:
         raise ValueError(f"Unexpected image shape: {image.shape}")
     
-    # Load feature maps
+    # load feature maps
     with open(feature_map_path, 'rb') as f:
         loaded_feature_maps = pickle.load(f)
 
-    # Plot for each convolutional layer
+    # plot for each convolutional layer
     fig, axes = plt.subplots(len(modules), 2, figsize=(8, 4 * len(modules)))
 
     for i, layer in enumerate(modules):
-        # Convert layer object to string to match saved keys
+        # convert layer object to string to match saved keys
         layer_name = str(layer)
 
-        # Original image
+        # original image
         axes[i, 0].imshow(image, cmap='gray')
         axes[i, 0].set_title('Input')
         axes[i, 0].axis('off')
 
-        # Retrieve the feature maps using the layer name (as string)
+        # retrieve the feature maps using the layer name (as string)
         feature_maps = loaded_feature_maps.get(layer_name, None)
         if feature_maps is None:
             raise KeyError(f"Layer {layer_name} not found in loaded_feature_maps")
@@ -148,7 +148,7 @@ def plot_PEEK(modules, sample_image, feature_map_path):
         feature_maps = np.moveaxis(feature_maps, 0, -1)  # Rearrange channels
         peek_map = compute_PEEK(feature_maps, h, w)  # Compute PEEK map
 
-        # Plot PEEK map overlaid on the original image
+        # plot PEEK map overlaid on the original image
         axes[i, 1].imshow(image, cmap='gray')  # Original image
         axes[i, 1].imshow(peek_map, alpha=0.7, cmap='jet')  # Overlay PEEK
         axes[i, 1].set_title(f'PEEK - {layer_name}')
@@ -208,7 +208,7 @@ def main():
     feature_map_path = save_feature_maps(model, feature_maps, sample_image, save_path)
 
     # Plot PEEK
-    modules = [m for m in model.modules() if isinstance(m, nn.MultiheadAttention)]
+    modules = [m for m in model.modules() if isinstance(m, nn.MultiheadAttention)] # only saving attention modules 
     plot_PEEK(modules, sample_image, feature_map_path)
     print("plotted")
 
