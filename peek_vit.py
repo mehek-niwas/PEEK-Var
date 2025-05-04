@@ -104,7 +104,7 @@ def plot_PEEK(modules, sample_image, feature_map_path):
     if feature_map_path is None:
         print(f"Feature map path {feature_map_path} does not exist. Please run save_feature_maps first.")
 
-    # Load original image
+    # loading original image
     # image = sample_image.squeeze().cpu().numpy()
     # #####h, w = image.shape
     # #####_, _, h, w = image.shape
@@ -157,32 +157,31 @@ def plot_PEEK(modules, sample_image, feature_map_path):
     fig.tight_layout()
     plt.show()
 
-
-# ----- Main Runner -----
+# ------ MAIN FUNCTION --> MODEL INIT & TRAINING HERE ------- 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Load CIFAR-10
+    # load CIFAR-10
     transform = transforms.Compose([
         transforms.Resize((32, 32)),
         transforms.ToTensor()
     ])
-    print("hello loaded")
+    print("loaded")
 
     train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
     test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-    print("hello train/test setup")
+    print("train/test setup")
 
-    # Model
+    # model
     model = VisionTransformer(img_size=32, patch_size=4, num_classes=10).to(device)
     register_hooks(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    print("hello model init")
+    print("model init")
 
-    # Train
+    # train
     model.train()
     for epoch in range(2):
         for images, labels in train_loader:
@@ -194,20 +193,20 @@ def main():
             optimizer.step()
         print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
     
-    print("hello trained")
+    print("trained")
 
-    # Select Sample Image
+    # sample image selection
     sample_image, _ = test_dataset[0]
     sample_image = sample_image.unsqueeze(0).to(device)
-    print("hello sample image selected")
+    print("sample image selected")
 
-    # Save feature maps
+    # saving feature maps
     save_path = './features/sample_image.pkl'
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    print("hello sample feature map saved")
     feature_map_path = save_feature_maps(model, feature_maps, sample_image, save_path)
+    print("sample feature map saved")
 
-    # Plot PEEK
+    # plotting peek
     modules = [m for m in model.modules() if isinstance(m, nn.MultiheadAttention)] # only saving attention modules 
     plot_PEEK(modules, sample_image, feature_map_path)
     print("plotted")
