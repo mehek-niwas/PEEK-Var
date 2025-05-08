@@ -88,24 +88,26 @@ def compute_attention_PEEK(attn_weights, h, w):
     if isinstance(attn_weights, np.ndarray):
         attn_weights = torch.tensor(attn_weights)
     
-    print(f"[DEBUG] attn_weights shape: {attn_weights.shape}")  # Expect [num_heads, N, N]
+    print(f"[DEBUG] attn_weights shape: {attn_weights.shape}")  # [num_heads, N, N] --> 4, 64, 64
+    
+    # confirming softmax sum = 1 (to verify PMF)
+    # row_sums = attn_weights.sum(dim=-1)  # sum over key_len
+    # print(row_sums)
 
     if attn_weights.dim() == 4:
         attn_weights = attn_weights.squeeze(0)  # remove batch dimension
 
-    print(f"[DEBUG] attn_weights shape: {attn_weights.shape}")  # Expect [num_heads, N, N]
+    print(f"[DEBUG] attn_weights shape: {attn_weights.shape}")  # [num_heads, N, N] ---> 1, 4, 64, 64
 
     num_heads, N, _ = attn_weights.shape
-    attn_mean = attn_weights.mean(dim=0).numpy()  # [N, N]
-    entropy = entr(attn_mean).sum(axis=-1)        # [N]
-    print(f"[DEBUG] entropy shape: {entropy.shape}")
+    attn_mean = attn_weights.mean(dim=0).numpy()  # [N, N]  ---> 64, 64 (this is the attention matrix)
+    entropy = entr(attn_mean).sum(axis=-1)        # [N] --> 64
+    print(f"[DEBUG] entropy shape: {entropy.shape}") # ---> 64
 
-    side = int(np.sqrt(N))
-    if side * side != N:
-        raise ValueError(f"Cannot reshape {N} tokens into square grid (expected perfect square).")
-
-    entropy_map = entropy.reshape(side, side)
-    peek_map = cv2.resize(entropy_map, (w, h), interpolation=cv2.INTER_CUBIC)
+    side = int(np.sqrt(N)) # --> sqrt(64) = 8
+    
+    entropy_map = entropy.reshape(side, side) # --> 8 x 8
+    peek_map = cv2.resize(entropy_map, (w, h), interpolation=cv2.INTER_CUBIC) 
     return peek_map
 
 
