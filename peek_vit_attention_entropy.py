@@ -81,7 +81,7 @@ def register_hooks(model):
         module.register_forward_hook(hook_fn)
 
 # ----- attention PEEK -----
-def compute_attention_PEEK(attn_weights, h, w):
+def compute_attention_PEEK(layer_name, attn_weights, h, w):
     """
     attn_weights: [1, num_heads, N, N] → squeeze batch
     """
@@ -100,9 +100,37 @@ def compute_attention_PEEK(attn_weights, h, w):
     print(f"[DEBUG] attn_weights shape: {attn_weights.shape}")  # [num_heads, N, N] ---> 1, 4, 64, 64
 
     num_heads, N, _ = attn_weights.shape
-    attn_mean = attn_weights.mean(dim=0).numpy()  # [N, N]  ---> 64, 64 (this is the attention matrix)
-    entropy = entr(attn_mean).sum(axis=-1)        # [N] --> 64
+    attn_mean = attn_weights.mean(dim=0).numpy()  # [N, N]  ---> 64, 64 (this is the mean attention matrix that results from all the heads)
+    entropy = entr(attn_mean).sum(axis=-1)        # [N] --> 64 (this is the entropy of the mean attention weights for each token) --> 1 entropy value per token for the entire layer
+    entropy_var = entropy.var() # might have to do np.var
+    entropy_avg = entropy.mean()
+    entropy_min = entropy.min()
+    entropy_max = entropy.max()
+    
+    # STRAIGHT FROM GPT.open()
+    entropy = entropy.cpu().numpy() if torch.is_tensor(entropy) else entropy
+
+    # Create plot
+    plt.boxplot(entropy)
+    plt.title("Entropy Distribution")
+    plt.ylabel("Entropy")
+    plt.grid(True)
+
+    # Save with a custom filename
+    filename = f"entropy_boxplot_{layer_name}.png"
+    plt.savefig(filename)
+    plt.close()
+
+    print(f"Saved plot as {filename}")
+    # STRAIGHT FROM GPT.close()
+    
+    print("entropy token distribution information. entropy was calculate from the mean attention weight across all heads [for whichever layer this is right now]")
+    
     print(f"[DEBUG] entropy shape: {entropy.shape}") # ---> 64
+    print(f"[INSPECT] entropy variance: {entropy_var}") # should only be one number
+    print(f"[INSPECT] entropy average: {entropy_avg}") # should only be one number
+    print(f"[INSPECT] entropy min: {entropy_min}") # should only be one number
+    print(f"[INSPECT] entropy min: {entropy_max}") # should only be one number
 
     side = int(np.sqrt(N)) # --> sqrt(64) = 8
     
@@ -111,15 +139,27 @@ def compute_attention_PEEK(attn_weights, h, w):
     return peek_map
 
 
-def save_feature_maps(model, feature_maps, sample_image, save_path):
+def save_feature_maps_and_predict(model, classes, feature_maps, sample_image, true_label, save_path):
+    
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    model.eval()
     with torch.no_grad():
-        model.eval()
-        _ = model(sample_image)
+        output = model(sample_image)
+        predicted_class_id = output.argmax(dim=1).item() # i can also get the next few closest classes 
+        predicted_class = classes[predicted_class_id]
+        true_class = classes[true_label]
         with open(save_path, 'wb') as f:
             pickle.dump({k: v.numpy() for k, v in feature_maps.items()}, f)
     print(f"Feature maps saved at {save_path}")
-    return save_path
+    
+    #### temporary code for correct / incorrect. this is not currently stored in a variable
+    print(f"Predicted: {predicted_class} (index {predicted_class_id})")
+    print(f"Actual: {true_class} (index {true_label})")
+    print("Correct!" if predicted_class_id == true_label else "Incorrect.")
+    ####
+
+    
+    return save_path, predicted_class
 
 def plot_PEEK(modules, sample_image, feature_map_path):
     if not os.path.exists(feature_map_path):
@@ -147,7 +187,7 @@ def plot_PEEK(modules, sample_image, feature_map_path):
         if attn_weights is None:
             raise KeyError(f"Layer {layer_name} not found in feature maps")
 
-        peek_map = compute_attention_PEEK(torch.tensor(attn_weights), h, w)
+        peek_map = compute_attention_PEEK(layer_name, torch.tensor(attn_weights), h, w)
         axes[i, 1].imshow(image)
         axes[i, 1].imshow(peek_map, alpha=0.6, cmap='jet')
         axes[i, 1].set_title(f"PEEK - {layer_name}")
@@ -165,8 +205,8 @@ def main():
         transforms.ToTensor()
     ])
 
-    train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform) # 50000 training images
+    test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform) # 10000 testing images
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
@@ -177,7 +217,7 @@ def main():
 
     # Train loop
     model.train()
-    for epoch in range(2):
+    for epoch in range(1):
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -186,15 +226,57 @@ def main():
             loss.backward()
             optimizer.step()
         print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+    
+    # get classes 
+    classes = test_dataset.classes  # ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
     # Pick one test image
-    sample_image, _ = test_dataset[0]
+    sample_image, true_label = test_dataset[2]
     sample_image = sample_image.unsqueeze(0).to(device)
 
     save_path = './features/sample_image_attn.pkl'
-    feature_map_path = save_feature_maps(model, feature_maps, sample_image, save_path)
-
+    
+    feature_map_path, prediction = save_feature_maps_and_predict(model, classes, feature_maps, sample_image, true_label, save_path) # model is set to evaluation mode in this function
+    
     modules = [m for m in model.encoder]
     plot_PEEK(modules, sample_image, feature_map_path)
+    print(prediction)
+    
+    print("\n model evaluation summary (on test dataset)")
+    
+    ## STRAIGHT FROM GPT AYYYEEEEE.open()
+    from collections import Counter
+    import torch.nn.functional as F
+
+    model.eval()
+    correct = 0
+    total = 0
+    confusion_pairs = []
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+            # Log confusion pairs
+            for p, t in zip(predicted.cpu(), labels.cpu()):
+                if p != t:
+                    confusion_pairs.append((t.item(), p.item()))
+
+    accuracy = 100 * correct / total
+    print(f"\nTest Accuracy: {accuracy:.2f}%")
+    confusion_counts = Counter(confusion_pairs)
+    most_common_confusions = confusion_counts.most_common(5) # i did not know most_common is a command
+
+    print("\nMost common confusions:")
+    for (true_id, pred_id), count in most_common_confusions:
+        print(f"  {classes[true_id]} → ❌ {classes[pred_id]}: {count} times")
+    # STRAIGHT FROM GPT AYEEEE.close()
 
 main()
+
+
+
