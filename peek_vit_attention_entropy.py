@@ -12,6 +12,7 @@ import os
 import cv2
 from scipy.special import entr
 
+
 # ----- simple VIT model -----
 class PatchEmbedding(nn.Module):
     def __init__(self, img_size=32, patch_size=4, in_channels=3, embed_dim=64):
@@ -81,7 +82,8 @@ def register_hooks(model):
         module.register_forward_hook(hook_fn)
 
 # ----- attention PEEK -----
-def compute_attention_PEEK(layer_name, attn_weights, h, w):
+def compute_attention_PEEK(layer_name, attn_weights, h, w, save_entropy=True, return_entropy=True):  # MUST BE CALLED FOR EVERY LAYER SPECIFIED. default returns entropy & peek_map
+                                                                                # SAVES NUMPY ARRAY OF ENTROPY IN AN ENTROPY DIRECTORY
     """
     attn_weights: [1, num_heads, N, N] → squeeze batch
     """
@@ -106,22 +108,29 @@ def compute_attention_PEEK(layer_name, attn_weights, h, w):
     entropy_avg = entropy.mean()
     entropy_min = entropy.min()
     entropy_max = entropy.max()
-    
-    # STRAIGHT FROM GPT.open()
-    entropy = entropy.cpu().numpy() if torch.is_tensor(entropy) else entropy
 
-    # Create plot
-    plt.boxplot(entropy)
-    plt.title("Entropy Distribution")
-    plt.ylabel("Entropy")
-    plt.grid(True)
+    if save_entropy:
+        entropy = entropy.cpu().numpy() if torch.is_tensor(entropy) else entropy
+        os.makedirs("entropies", exist_ok=True)
+        np.save(f"entropies/entropy_{layer_name}.npy", entropy)
 
-    # Save with a custom filename
-    filename = f"entropy_boxplot_{layer_name}.png"
-    plt.savefig(filename)
-    plt.close()
-
-    print(f"Saved plot as {filename}")
+    # # STRAIGHT FROM GPT.open()
+    # entropy = entropy.cpu().numpy() if torch.is_tensor(entropy) else entropy
+    # # Create plot
+    # plt.boxplot(entropy)
+    # plt.title("Entropy Distribution")
+    # plt.ylabel("Entropy")
+    # plt.grid(True)
+    # # Save with a custom filename
+    # filename = f"entropy_boxplot_{layer_name}.png"
+    # plt.savefig(filename)
+    # plt.close()
+    # print(f"Saved plot as {filename}")
+    # # Save with a custom filename
+    # filename = f"entropy_boxplot_{layer_name}.png"
+    # plt.savefig(filename)
+    # plt.close()
+    # print(f"Saved plot as {filename}")
     # STRAIGHT FROM GPT.close()
     
     print("entropy token distribution information. entropy was calculate from the mean attention weight across all heads [for whichever layer this is right now]")
@@ -136,7 +145,11 @@ def compute_attention_PEEK(layer_name, attn_weights, h, w):
     
     entropy_map = entropy.reshape(side, side) # --> 8 x 8
     peek_map = cv2.resize(entropy_map, (w, h), interpolation=cv2.INTER_CUBIC) 
-    return peek_map
+    
+    if (return_entropy):
+        return entropy, peek_map
+    else:
+        return peek_map
 
 
 def save_feature_maps_and_predict(model, classes, feature_maps, sample_image, true_label, save_path):
@@ -158,10 +171,12 @@ def save_feature_maps_and_predict(model, classes, feature_maps, sample_image, tr
     print("Correct!" if predicted_class_id == true_label else "Incorrect.")
     ####
 
-    
     return save_path, predicted_class
 
-def plot_PEEK(modules, sample_image, feature_map_path):
+
+def plot_PEEK(modules, sample_image, feature_map_path):  #       THIS IS CALLED FOR A SAMPLE IMAGE AFTER ITS RESPECTIVE FEATURE MAPS HAVE BEEN SAVED.
+                                                         #       THIS FUNCTION ALSO CALLS THE COMPUTE_ATTENTION_PEEK METHOD FOR EACH FEATURE MAP OF THE IMAGE
+                                                         #        RETURNS GIGA PLOT WITH SUBPLOTS FOR EACH LAYER W/ ENTROPIC HEAT MAP OF IMAGE
     if not os.path.exists(feature_map_path):
         print(f"Feature map path {feature_map_path} does not exist.")
         return
@@ -187,17 +202,23 @@ def plot_PEEK(modules, sample_image, feature_map_path):
         if attn_weights is None:
             raise KeyError(f"Layer {layer_name} not found in feature maps")
 
-        peek_map = compute_attention_PEEK(layer_name, torch.tensor(attn_weights), h, w)
+        entropy, peek_map = compute_attention_PEEK(layer_name, torch.tensor(attn_weights), h, w)
         axes[i, 1].imshow(image)
-        axes[i, 1].imshow(peek_map, alpha=0.6, cmap='jet')
+        axes[i, 1].imshow(peek_map, alpha=0.6, cmap="jet")
         axes[i, 1].set_title(f"PEEK - {layer_name}")
-        axes[i, 1].axis('off')
+        axes[i, 1].axis("off")
 
     fig.tight_layout()
+    
+    plt.savefig("image_entropy_heatmap_plot.png")
     plt.show()
+    plt.close()
+    
+
 
 # ------ MAIN FUNCTION -------
 def main():
+    print("hello beta")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     transform = transforms.Compose([
@@ -232,8 +253,8 @@ def main():
 
     # Pick one test image
     sample_image, true_label = test_dataset[2]
-    sample_image = sample_image.unsqueeze(0).to(device)
-
+    sample_image = sample_image.unsqueeze(0).to(device)\
+    # Save feature maps
     save_path = './features/sample_image_attn.pkl'
     
     feature_map_path, prediction = save_feature_maps_and_predict(model, classes, feature_maps, sample_image, true_label, save_path) # model is set to evaluation mode in this function
@@ -277,6 +298,3 @@ def main():
     # STRAIGHT FROM GPT AYEEEE.close()
 
 main()
-
-
-
