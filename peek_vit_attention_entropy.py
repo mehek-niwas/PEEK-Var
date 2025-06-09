@@ -48,7 +48,7 @@ class TransformerEncoder(nn.Module):
         return x
 
 class VisionTransformer(nn.Module):
-    def __init__(self, img_size=32, patch_size=4, num_classes=10, embed_dim=64, depth=4, num_heads=4, hidden_dim=128):
+    def __init__(self, img_size=32, patch_size=4, num_classes=10, embed_dim=64, depth=6, num_heads=4, hidden_dim=128):
         super().__init__()
         self.patch_embed = PatchEmbedding(img_size, patch_size, 3, embed_dim)
         self.pos_embed = nn.Parameter(torch.randn(1, (img_size // patch_size)**2, embed_dim))
@@ -238,7 +238,7 @@ def main():
 
     # Train loop
     model.train()
-    for epoch in range(1):
+    for epoch in range(7):
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -253,7 +253,7 @@ def main():
 
     # Pick one test image
     sample_image, true_label = test_dataset[2]
-    sample_image = sample_image.unsqueeze(0).to(device)\
+    sample_image = sample_image.unsqueeze(0).to(device)
     # Save feature maps
     save_path = './features/sample_image_attn.pkl'
     
