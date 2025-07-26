@@ -1,10 +1,9 @@
 # PEEK-Var
 exploring the application of pruning methods via PEEK variance to vision transformers
 
-
 based on prior research from NETS lab
 
-some preliminary results:
+# some preliminary results:
 
 the heat map represents the value of the average attention entropy for a specific patch in a specific encoder layer. 
 this means that if the value is higher, then that specific image patch is paying attention to many other patches in the image.
