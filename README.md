@@ -18,7 +18,7 @@ noticed that the distribution tends to be come bimodal in the last (deepest) lay
 
 <img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/dc45c4aa-0f8b-4b4d-8b31-0275b07a56ad" />
 
-things to investigate (in no particular order):
+# things to investigate (in no particular order):
 - analyzing results using a larger pretrained model
 - is the bimodal distribution consistent in the last layer?
 - can we learn anything by applying this to language instead?
